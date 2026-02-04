@@ -18,6 +18,8 @@ import { useExperiment, useExperimentMutations } from '@/hooks/useExperiments'
 import { useTasksWithOptimisticUpdates, useTaskMutations } from '@/hooks/useTasks'
 import { useRaci } from '@/hooks/useRaci'
 import { useOutcome } from '@/hooks/useOutcomes'
+import { useMetricsRollup } from '@/hooks/useMetricsRollup'
+import { calculateExperimentProgress, type ExperimentWithTaskCount } from '@/utils/metricsRollup'
 import { KanbanColumn, type KanbanColumnType } from '@/components/KanbanColumn'
 import { KanbanCard } from '@/components/KanbanCard'
 import { StatusBadge } from '@/components/StatusBadge'
@@ -425,13 +427,41 @@ export default function ExperimentDetail() {
 
   // Data fetching
   const { experiment, isLoading: experimentLoading, error: experimentError, refetch: refetchExperiment } = useExperiment(experimentId)
-  const { tasksByStatus, isLoading: tasksLoading, error: tasksError, moveTask } = useTasksWithOptimisticUpdates(experimentId)
+  const { tasksByStatus, isLoading: tasksLoading, error: tasksError, moveTask, refetch: refetchTasks } = useTasksWithOptimisticUpdates(experimentId)
   const { assignmentsByRole, isLoading: raciLoading } = useRaci(experimentId || 0, 'Experiment')
-  const { outcome } = useOutcome(experiment?.outcome_id)
+  const { outcome, refetch: refetchOutcome } = useOutcome(experiment?.outcome_id)
 
   // Mutations
   const { updateExperiment, deleteExperiment, isUpdating, isDeleting } = useExperimentMutations(refetchExperiment)
   const taskMutations = useTaskMutations()
+
+  // Metrics roll-up for automatic progress calculation
+  const {
+    updateExperimentProgress,
+    updateOutcomeProgress,
+    isUpdatingExperiment: isUpdatingProgress,
+    lastExperimentProgress,
+  } = useMetricsRollup(experimentId, outcome?.id, {
+    onExperimentProgressUpdated: (expId, newProgress) => {
+      console.log(`Experiment ${expId} progress updated to ${newProgress}%`)
+      // Refetch experiment to get updated data
+      refetchExperiment()
+    },
+    onOutcomeProgressUpdated: (outId, newProgress) => {
+      console.log(`Outcome ${outId} progress updated to ${newProgress}%`)
+      // Refetch outcome to get updated data
+      refetchOutcome()
+    },
+  })
+
+  // Calculate real-time progress from current tasks
+  const calculatedProgress = useMemo(() => {
+    const allTasks = Object.values(tasksByStatus).flat()
+    return calculateExperimentProgress(allTasks)
+  }, [tasksByStatus])
+
+  // Use calculated progress for display if available, otherwise use stored value
+  const displayProgress = lastExperimentProgress ?? calculatedProgress ?? experiment?.progress ?? 0
 
   // Refs
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -484,10 +514,40 @@ export default function ExperimentDetail() {
   const handleDrop = useCallback(async (column: KanbanColumnType) => {
     if (draggedTask && draggedTask.status !== column) {
       await moveTask(draggedTask.id, column)
+
+      // After task move, recalculate and update experiment progress
+      if (experimentId) {
+        // Create updated tasks array with the moved task's new status
+        const allTasks = Object.values(tasksByStatus).flat()
+        const updatedTasks = allTasks.map((t) =>
+          t.id === draggedTask.id ? { ...t, status: column } : t
+        )
+
+        // Update experiment progress in database
+        await updateExperimentProgress(experimentId, updatedTasks)
+
+        // If we have an outcome, update its progress too
+        if (outcome?.id && outcome.experiments) {
+          // Calculate current experiment's task count
+          const currentExpTaskCount = updatedTasks.length
+          const newExpProgress = calculateExperimentProgress(updatedTasks)
+
+          // Create experiments array with updated progress for current experiment
+          const experimentsWithTaskCount: ExperimentWithTaskCount[] = outcome.experiments.map(
+            (exp) => ({
+              ...exp,
+              taskCount: exp.id === experimentId ? currentExpTaskCount : (exp as unknown as { tasks?: unknown[] }).tasks?.length || 0,
+              progress: exp.id === experimentId ? newExpProgress : exp.progress,
+            })
+          )
+
+          await updateOutcomeProgress(outcome.id, experimentsWithTaskCount)
+        }
+      }
     }
     setDraggedTask(null)
     setDragOverColumn(null)
-  }, [draggedTask, moveTask])
+  }, [draggedTask, moveTask, experimentId, tasksByStatus, updateExperimentProgress, outcome, updateOutcomeProgress])
 
   const handleDragEnter = useCallback((column: KanbanColumnType) => {
     setDragOverColumn(column)
@@ -515,11 +575,64 @@ export default function ExperimentDetail() {
         experiment_id: experimentId
       } as TaskInsert)
     }
-  }, [selectedTask, experimentId, newTaskStatus, taskMutations])
+
+    // After task create/update, wait briefly then recalculate progress
+    // The tasks list will be refetched by the mutation success callback
+    setTimeout(async () => {
+      if (experimentId) {
+        // Refetch tasks to get the latest data
+        await refetchTasks()
+
+        // Get updated tasks and recalculate
+        const allTasks = Object.values(tasksByStatus).flat()
+        // If we created a new task, add it to the count
+        const updatedTaskCount = selectedTask ? allTasks.length : allTasks.length + 1
+
+        await updateExperimentProgress(experimentId, allTasks)
+
+        // Update outcome if available
+        if (outcome?.id && outcome.experiments) {
+          const newExpProgress = calculateExperimentProgress(allTasks)
+          const experimentsWithTaskCount: ExperimentWithTaskCount[] = outcome.experiments.map(
+            (exp) => ({
+              ...exp,
+              taskCount: exp.id === experimentId ? updatedTaskCount : (exp as unknown as { tasks?: unknown[] }).tasks?.length || 0,
+              progress: exp.id === experimentId ? newExpProgress : exp.progress,
+            })
+          )
+          await updateOutcomeProgress(outcome.id, experimentsWithTaskCount)
+        }
+      }
+    }, 500)
+  }, [selectedTask, experimentId, newTaskStatus, taskMutations, refetchTasks, tasksByStatus, updateExperimentProgress, outcome, updateOutcomeProgress])
 
   const handleTaskDelete = useCallback(async (taskId: number) => {
     await taskMutations.deleteTask(taskId)
-  }, [taskMutations])
+
+    // After task deletion, recalculate progress
+    setTimeout(async () => {
+      if (experimentId) {
+        // Get tasks excluding the deleted one
+        const allTasks = Object.values(tasksByStatus).flat()
+        const remainingTasks = allTasks.filter((t) => t.id !== taskId)
+
+        await updateExperimentProgress(experimentId, remainingTasks)
+
+        // Update outcome if available
+        if (outcome?.id && outcome.experiments) {
+          const newExpProgress = calculateExperimentProgress(remainingTasks)
+          const experimentsWithTaskCount: ExperimentWithTaskCount[] = outcome.experiments.map(
+            (exp) => ({
+              ...exp,
+              taskCount: exp.id === experimentId ? remainingTasks.length : (exp as unknown as { tasks?: unknown[] }).tasks?.length || 0,
+              progress: exp.id === experimentId ? newExpProgress : exp.progress,
+            })
+          )
+          await updateOutcomeProgress(outcome.id, experimentsWithTaskCount)
+        }
+      }
+    }, 300)
+  }, [taskMutations, experimentId, tasksByStatus, updateExperimentProgress, outcome, updateOutcomeProgress])
 
   // Loading state
   if (experimentLoading) {
@@ -712,14 +825,24 @@ export default function ExperimentDetail() {
               {/* Progress */}
               <CollapsibleSection title="Progress" defaultOpen={true}>
                 <div className="space-y-3">
-                  <ProgressBar
-                    value={experiment.progress}
-                    showLabel
-                    size="lg"
-                    color={experiment.progress >= 100 ? 'success' : experiment.progress >= 50 ? 'info' : 'default'}
-                  />
+                  <div className="relative">
+                    <ProgressBar
+                      value={displayProgress}
+                      showLabel
+                      size="lg"
+                      color={displayProgress >= 100 ? 'success' : displayProgress >= 50 ? 'info' : 'default'}
+                    />
+                    {isUpdatingProgress && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded">
+                        <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-500">
                     {tasksByStatus.Done.length} of {Object.values(tasksByStatus).flat().length} tasks completed
+                    {displayProgress !== experiment.progress && (
+                      <span className="ml-1 text-blue-500">(updating...)</span>
+                    )}
                   </p>
                 </div>
               </CollapsibleSection>

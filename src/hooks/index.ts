@@ -51,3 +51,11 @@ export {
   type UseTaskResult,
   type UseTaskMutationsResult,
 } from './useTasks'
+
+export {
+  useMetricsRollup,
+  useExperimentMetrics,
+  useAutoExperimentProgress,
+  type UseMetricsRollupOptions,
+  type UseMetricsRollupResult,
+} from './useMetricsRollup'

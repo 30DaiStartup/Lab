@@ -17,10 +17,17 @@ import {
   X,
   AlertCircle,
   RefreshCw,
+  Loader2,
+  Zap,
 } from 'lucide-react'
 import { useOutcome, useOutcomeMutations } from '@/hooks/useOutcomes'
 import { useRaci } from '@/hooks/useRaci'
-import { useAnalysis, type CurrentStateData, type SolutionsData } from '@/hooks/useAnalysis'
+import { useAnalysis, useAnalysisMutations, type CurrentStateData, type SolutionsData } from '@/hooks/useAnalysis'
+import {
+  generateCurrentStateAnalysisAsync,
+  generateSolutionsAsync,
+  canGenerateSolutions,
+} from '@/utils/analysisGenerator'
 import type { OutcomeStatus, OutcomeLevel, CascadeAlignment, RaciRole } from '@/types/database'
 import { StatusBadge, type Status } from '@/components/StatusBadge'
 import { ProgressBar } from '@/components/ProgressBar'
@@ -474,9 +481,13 @@ interface AnalysisSectionProps {
   currentState: CurrentStateData | null
   solutions: SolutionsData | null
   isLoading: boolean
+  onGenerateAnalysis?: () => void
+  onGenerateSolutions?: () => void
+  isGenerating?: boolean
+  isGeneratingSolutions?: boolean
 }
 
-function AnalysisSection({ currentState, solutions, isLoading }: AnalysisSectionProps) {
+function AnalysisSection({ currentState, solutions, isLoading, onGenerateAnalysis, onGenerateSolutions, isGenerating, isGeneratingSolutions }: AnalysisSectionProps) {
   const [isExpanded, setIsExpanded] = useState(true)
 
   if (isLoading) {
@@ -498,14 +509,40 @@ function AnalysisSection({ currentState, solutions, isLoading }: AnalysisSection
           )}
         />
         <h3 className="text-lg font-semibold text-slate-800">Analysis</h3>
-        {!hasAnalysis && (
+        {hasAnalysis && (
+          <Badge variant="secondary" className="ml-2 text-xs bg-violet-100 text-violet-700 border-violet-200 gap-1">
+            <Zap className="size-3" />
+            AI-powered
+          </Badge>
+        )}
+        {!hasAnalysis && !isGenerating && (
           <Badge variant="secondary" className="ml-2 text-xs">Not generated</Badge>
         )}
       </button>
 
       {isExpanded && (
         <div className="animate-in fade-in slide-in-from-top-2 duration-200">
-          {!hasAnalysis ? (
+          {isGenerating ? (
+            <Card className="border-violet-200 bg-gradient-to-br from-violet-50/50 to-slate-50">
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <div className="w-14 h-14 rounded-2xl bg-violet-100 flex items-center justify-center mb-4 animate-pulse">
+                  <Sparkles className="size-7 text-violet-500" />
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Loader2 className="size-4 text-violet-600 animate-spin" />
+                  <h4 className="font-semibold text-slate-700">Generating Analysis...</h4>
+                </div>
+                <p className="text-sm text-slate-500 text-center max-w-sm">
+                  AI is analyzing the outcome data to identify problems, metrics, and stakeholders.
+                </p>
+                <div className="mt-4 flex gap-1">
+                  <span className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </CardContent>
+            </Card>
+          ) : !hasAnalysis ? (
             <Card className="border-dashed border-slate-300 bg-slate-50/50">
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
@@ -515,7 +552,11 @@ function AnalysisSection({ currentState, solutions, isLoading }: AnalysisSection
                 <p className="text-sm text-slate-500 text-center max-w-sm mb-4">
                   Generate AI-powered analysis to understand the current state and discover solutions.
                 </p>
-                <Button variant="outline" className="gap-2">
+                <Button
+                  variant="outline"
+                  className="gap-2 border-violet-200 text-violet-700 hover:bg-violet-50 hover:text-violet-800 hover:border-violet-300"
+                  onClick={onGenerateAnalysis}
+                >
                   <Sparkles className="size-4" />
                   Generate Analysis
                 </Button>
@@ -602,75 +643,239 @@ function AnalysisSection({ currentState, solutions, isLoading }: AnalysisSection
                     </CardContent>
                   </Card>
                 )}
+
+                {currentState?.stakeholders && currentState.stakeholders.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Stakeholders</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap gap-2">
+                        {currentState.stakeholders.map((stakeholder, i) => (
+                          <div
+                            key={i}
+                            className="inline-flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg"
+                          >
+                            <Users className="size-4 text-slate-400" />
+                            <div>
+                              <span className="text-sm font-medium text-slate-700">{stakeholder.name}</span>
+                              {stakeholder.role && (
+                                <span className="text-xs text-slate-500 ml-1">({stakeholder.role})</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {currentState?.analyzedAt && (
+                  <div className="flex items-center justify-end gap-2 text-xs text-slate-400 pt-2">
+                    <Clock className="size-3" />
+                    <span>Analyzed {formatDateTime(currentState.analyzedAt)}</span>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="solutions" className="space-y-4">
-                {solutions?.strategySummary && (
-                  <Card className="bg-blue-50 border-blue-100">
-                    <CardContent className="py-4">
-                      <p className="text-blue-800 text-sm">{solutions.strategySummary}</p>
+                {isGeneratingSolutions ? (
+                  <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50/50 to-slate-50">
+                    <CardContent className="flex flex-col items-center justify-center py-12">
+                      <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center mb-4 animate-pulse">
+                        <Lightbulb className="size-7 text-emerald-500" />
+                      </div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Loader2 className="size-4 text-emerald-600 animate-spin" />
+                        <h4 className="font-semibold text-slate-700">Generating Solutions...</h4>
+                      </div>
+                      <p className="text-sm text-slate-500 text-center max-w-sm">
+                        AI is analyzing problems to generate quick wins and systemic fixes.
+                      </p>
+                      <div className="mt-4 flex gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
                     </CardContent>
                   </Card>
-                )}
-
-                {solutions?.quickWins && solutions.quickWins.length > 0 && (
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                        Quick Wins
-                      </CardTitle>
-                      <CardDescription>Low effort, fast implementation</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {solutions.quickWins.map((solution) => (
-                        <div
-                          key={solution.id}
-                          className="flex items-start gap-3 p-3 bg-emerald-50/50 border border-emerald-100 rounded-lg"
-                        >
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-slate-800">{solution.title}</p>
-                            <p className="text-sm text-slate-500 mt-0.5">{solution.description}</p>
+                ) : !solutions?.quickWins && !solutions?.systemicFixes ? (
+                  <Card className="border-dashed border-slate-300 bg-slate-50/50">
+                    <CardContent className="flex flex-col items-center justify-center py-12">
+                      <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+                        <Lightbulb className="size-7 text-slate-400" />
+                      </div>
+                      <h4 className="font-semibold text-slate-700 mb-1">No solutions yet</h4>
+                      <p className="text-sm text-slate-500 text-center max-w-sm mb-4">
+                        {canGenerateSolutions(currentState)
+                          ? 'Generate AI-powered solutions based on the identified problems.'
+                          : 'Generate Current State analysis first to enable solutions generation.'}
+                      </p>
+                      <Button
+                        variant="outline"
+                        className="gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300"
+                        onClick={onGenerateSolutions}
+                        disabled={!canGenerateSolutions(currentState)}
+                      >
+                        <Lightbulb className="size-4" />
+                        Generate Solutions
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <>
+                    {solutions?.strategySummary && (
+                      <Card className="bg-gradient-to-r from-blue-50 to-emerald-50 border-blue-100">
+                        <CardContent className="py-4">
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 bg-white rounded-lg shadow-sm">
+                              <Zap className="size-4 text-blue-500" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-700 mb-1">Strategy Summary</p>
+                              <p className="text-slate-600 text-sm">{solutions.strategySummary}</p>
+                            </div>
                           </div>
-                          {solution.status && (
-                            <Badge variant="secondary" className="text-xs shrink-0">
-                              {solution.status.replace('_', ' ')}
-                            </Badge>
-                          )}
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                )}
+                        </CardContent>
+                      </Card>
+                    )}
 
-                {solutions?.systemicFixes && solutions.systemicFixes.length > 0 && (
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-blue-500" />
-                        Systemic Fixes
-                      </CardTitle>
-                      <CardDescription>Address root causes, longer implementation</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {solutions.systemicFixes.map((solution) => (
-                        <div
-                          key={solution.id}
-                          className="flex items-start gap-3 p-3 bg-blue-50/50 border border-blue-100 rounded-lg"
-                        >
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-slate-800">{solution.title}</p>
-                            <p className="text-sm text-slate-500 mt-0.5">{solution.description}</p>
-                          </div>
-                          {solution.status && (
-                            <Badge variant="secondary" className="text-xs shrink-0">
-                              {solution.status.replace('_', ' ')}
+                    {solutions?.quickWins && solutions.quickWins.length > 0 && (
+                      <Card>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                            Quick Wins
+                            <Badge variant="secondary" className="ml-auto text-xs bg-emerald-100 text-emerald-700 border-emerald-200">
+                              {solutions.quickWins.length} solutions
                             </Badge>
-                          )}
+                          </CardTitle>
+                          <CardDescription>Low effort, high-impact actions for fast implementation</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {solutions.quickWins.map((solution) => (
+                            <div
+                              key={solution.id}
+                              className="flex items-start gap-3 p-4 bg-emerald-50/50 border border-emerald-100 rounded-lg hover:border-emerald-200 transition-colors"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="text-sm font-semibold text-slate-800">{solution.title}</p>
+                                </div>
+                                <p className="text-sm text-slate-500">{solution.description}</p>
+                                <div className="flex items-center gap-2 mt-2">
+                                  {solution.effort && (
+                                    <Badge variant="outline" className="text-xs border-emerald-200 text-emerald-700">
+                                      {solution.effort} effort
+                                    </Badge>
+                                  )}
+                                  {solution.impact && (
+                                    <Badge variant="outline" className="text-xs border-amber-200 text-amber-700">
+                                      {solution.impact} impact
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                              {solution.status && (
+                                <Badge
+                                  variant="secondary"
+                                  className={cn(
+                                    "text-xs shrink-0",
+                                    solution.status === 'in_progress' && "bg-blue-100 text-blue-700 border-blue-200",
+                                    solution.status === 'approved' && "bg-emerald-100 text-emerald-700 border-emerald-200",
+                                    solution.status === 'completed' && "bg-slate-100 text-slate-700 border-slate-200",
+                                    solution.status === 'proposed' && "bg-amber-100 text-amber-700 border-amber-200"
+                                  )}
+                                >
+                                  {solution.status.replace('_', ' ')}
+                                </Badge>
+                              )}
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {solutions?.systemicFixes && solutions.systemicFixes.length > 0 && (
+                      <Card>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-blue-500" />
+                            Systemic Fixes
+                            <Badge variant="secondary" className="ml-auto text-xs bg-blue-100 text-blue-700 border-blue-200">
+                              {solutions.systemicFixes.length} solutions
+                            </Badge>
+                          </CardTitle>
+                          <CardDescription>Root-cause solutions with longer implementation timelines</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {solutions.systemicFixes.map((solution) => (
+                            <div
+                              key={solution.id}
+                              className="flex items-start gap-3 p-4 bg-blue-50/50 border border-blue-100 rounded-lg hover:border-blue-200 transition-colors"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="text-sm font-semibold text-slate-800">{solution.title}</p>
+                                </div>
+                                <p className="text-sm text-slate-500">{solution.description}</p>
+                                <div className="flex items-center gap-2 mt-2">
+                                  {solution.effort && (
+                                    <Badge variant="outline" className="text-xs border-blue-200 text-blue-700">
+                                      {solution.effort} effort
+                                    </Badge>
+                                  )}
+                                  {solution.impact && (
+                                    <Badge variant="outline" className="text-xs border-amber-200 text-amber-700">
+                                      {solution.impact} impact
+                                    </Badge>
+                                  )}
+                                  {solution.targetDate && (
+                                    <Badge variant="outline" className="text-xs border-slate-200 text-slate-600">
+                                      {solution.targetDate}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                              {solution.status && (
+                                <Badge
+                                  variant="secondary"
+                                  className={cn(
+                                    "text-xs shrink-0",
+                                    solution.status === 'in_progress' && "bg-blue-100 text-blue-700 border-blue-200",
+                                    solution.status === 'approved' && "bg-emerald-100 text-emerald-700 border-emerald-200",
+                                    solution.status === 'completed' && "bg-slate-100 text-slate-700 border-slate-200",
+                                    solution.status === 'proposed' && "bg-amber-100 text-amber-700 border-amber-200"
+                                  )}
+                                >
+                                  {solution.status.replace('_', ' ')}
+                                </Badge>
+                              )}
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {solutions?.analyzedAt && (
+                      <div className="flex items-center justify-between pt-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-2 text-slate-500 hover:text-slate-700"
+                          onClick={onGenerateSolutions}
+                          disabled={isGeneratingSolutions}
+                        >
+                          <RefreshCw className="size-3.5" />
+                          Regenerate Solutions
+                        </Button>
+                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                          <Clock className="size-3" />
+                          <span>Generated {formatDateTime(solutions.analyzedAt)}</span>
                         </div>
-                      ))}
-                    </CardContent>
-                  </Card>
+                      </div>
+                    )}
+                  </>
                 )}
               </TabsContent>
             </Tabs>
@@ -721,7 +926,12 @@ export default function OutcomeDetail() {
   const { outcome: fetchedOutcome, isLoading, error, refetch } = useOutcome(outcomeId)
   const { updateOutcome, deleteOutcome, isUpdating, isDeleting } = useOutcomeMutations(refetch)
   const { assignmentsByRole, isLoading: isLoadingRaci } = useRaci(outcomeId ?? 0, 'Outcome')
-  const { analysisData, isLoading: isLoadingAnalysis } = useAnalysis(outcomeId, 'Outcome')
+  const { analysisData, isLoading: isLoadingAnalysis, refetch: refetchAnalysis } = useAnalysis(outcomeId, 'Outcome')
+  const { updateCurrentState, updateSolutions } = useAnalysisMutations()
+
+  // Analysis generation state
+  const [isGeneratingAnalysis, setIsGeneratingAnalysis] = useState(false)
+  const [isGeneratingSolutions, setIsGeneratingSolutions] = useState(false)
 
   // Use mock data if no outcome fetched
   const outcome = fetchedOutcome || mockOutcome
@@ -757,6 +967,82 @@ export default function OutcomeDetail() {
       navigate('/')
     }
   }, [outcomeId, deleteOutcome, navigate])
+
+  const handleGenerateAnalysis = useCallback(async () => {
+    if (!outcomeId || isGeneratingAnalysis) return
+
+    setIsGeneratingAnalysis(true)
+    try {
+      // Generate mock analysis with artificial delay
+      const generatedAnalysis = await generateCurrentStateAnalysisAsync(
+        {
+          id: outcome.id,
+          title: outcome.title,
+          description: outcome.description,
+          status: outcome.status,
+          progress: outcome.progress,
+        },
+        experiments.map((exp) => ({
+          id: exp.id,
+          title: exp.title,
+          status: exp.status,
+          progress: exp.progress,
+        }))
+      )
+
+      // Save to database
+      await updateCurrentState(outcomeId, 'Outcome', generatedAnalysis)
+
+      // Refetch to update UI
+      await refetchAnalysis()
+    } catch (err) {
+      console.error('Failed to generate analysis:', err)
+    } finally {
+      setIsGeneratingAnalysis(false)
+    }
+  }, [outcomeId, outcome, experiments, isGeneratingAnalysis, updateCurrentState, refetchAnalysis])
+
+  const handleGenerateSolutions = useCallback(async () => {
+    if (!outcomeId || isGeneratingSolutions) return
+
+    // Get current state - either from analysis data or use mock data
+    const currentState = analysisData?.currentState || mockAnalysis.currentState
+    if (!canGenerateSolutions(currentState)) {
+      console.warn('Cannot generate solutions without current state analysis')
+      return
+    }
+
+    setIsGeneratingSolutions(true)
+    try {
+      // Generate mock solutions with artificial delay
+      const generatedSolutions = await generateSolutionsAsync({
+        outcome: {
+          id: outcome.id,
+          title: outcome.title,
+          description: outcome.description,
+          status: outcome.status,
+          progress: outcome.progress,
+        },
+        experiments: experiments.map((exp) => ({
+          id: exp.id,
+          title: exp.title,
+          status: exp.status,
+          progress: exp.progress,
+        })),
+        currentState,
+      })
+
+      // Save to database
+      await updateSolutions(outcomeId, 'Outcome', generatedSolutions)
+
+      // Refetch to update UI
+      await refetchAnalysis()
+    } catch (err) {
+      console.error('Failed to generate solutions:', err)
+    } finally {
+      setIsGeneratingSolutions(false)
+    }
+  }, [outcomeId, outcome, experiments, analysisData, isGeneratingSolutions, updateSolutions, refetchAnalysis])
 
   // Sorted experiments
   const sortedExperiments = [...experiments].sort((a, b) => {
@@ -1000,9 +1286,13 @@ export default function OutcomeDetail() {
       {/* Analysis Section */}
       <section className="mb-10">
         <AnalysisSection
-          currentState={analysisData?.currentState || mockAnalysis.currentState}
-          solutions={analysisData?.solutions || mockAnalysis.solutions}
+          currentState={analysisData?.currentState ?? null}
+          solutions={analysisData?.solutions ?? null}
           isLoading={isLoadingAnalysis}
+          onGenerateAnalysis={handleGenerateAnalysis}
+          onGenerateSolutions={handleGenerateSolutions}
+          isGenerating={isGeneratingAnalysis}
+          isGeneratingSolutions={isGeneratingSolutions}
         />
       </section>
 
