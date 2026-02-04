@@ -5,6 +5,8 @@ export { PageHeader } from "./PageHeader"
 export { DataTable, type Column } from "./DataTable"
 export { KanbanColumn, type KanbanColumnType } from "./KanbanColumn"
 export { KanbanCard, type Priority } from "./KanbanCard"
+export { SearchOverlay } from "./SearchOverlay"
+export { NotificationsPanel } from "./NotificationsPanel"
 
 // Re-export shadcn UI components
 export { Button, buttonVariants } from "./ui/button"
