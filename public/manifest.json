@@ -1,0 +1,21 @@
+{
+  "name": "Outcome Tracking Dashboard",
+  "short_name": "Outcomes",
+  "description": "Track and manage outcomes, experiments, and tasks",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "business"],
+  "lang": "en-US",
+  "dir": "ltr"
+}

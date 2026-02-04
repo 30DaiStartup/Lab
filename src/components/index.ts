@@ -7,6 +7,15 @@ export { KanbanColumn, type KanbanColumnType } from "./KanbanColumn"
 export { KanbanCard, type Priority } from "./KanbanCard"
 export { SearchOverlay } from "./SearchOverlay"
 export { NotificationsPanel } from "./NotificationsPanel"
+export { OfflineIndicator, OfflineIndicatorCompact } from "./OfflineIndicator"
+export {
+  LiveIndicator,
+  RealtimeFlash,
+  ConnectionStatus,
+  type LiveIndicatorProps,
+  type RealtimeFlashProps,
+  type ConnectionStatusProps,
+} from "./LiveIndicator"
 
 // Re-export shadcn UI components
 export { Button, buttonVariants } from "./ui/button"

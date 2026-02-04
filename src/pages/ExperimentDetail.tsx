@@ -14,7 +14,10 @@ import {
   GripVertical
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { LiveIndicator } from '@/components/LiveIndicator'
 import { useExperiment, useExperimentMutations } from '@/hooks/useExperiments'
+import { useRealtimeExperiment } from '@/hooks/useRealtimeExperiments'
+import { useRealtimeTasks } from '@/hooks/useRealtimeTasks'
 import { useTasksWithOptimisticUpdates, useTaskMutations } from '@/hooks/useTasks'
 import { useRaci } from '@/hooks/useRaci'
 import { useOutcome } from '@/hooks/useOutcomes'
@@ -435,6 +438,38 @@ export default function ExperimentDetail() {
   const { updateExperiment, deleteExperiment, isUpdating, isDeleting } = useExperimentMutations(refetchExperiment)
   const taskMutations = useTaskMutations()
 
+  // Real-time subscriptions for this experiment
+  const { isConnected: isExperimentRealtimeConnected } = useRealtimeExperiment(experimentId, {
+    onUpdate: () => {
+      // Refetch experiment when it's updated by another user/tab
+      refetchExperiment()
+    },
+    onDelete: () => {
+      // Navigate away if experiment is deleted by another user
+      navigate(outcome ? `/outcomes/${outcome.id}` : '/')
+    },
+  })
+
+  // Real-time subscription for tasks - critical for Kanban multi-user collaboration
+  const { isConnected: isTasksRealtimeConnected } = useRealtimeTasks({
+    experimentId: experimentId ?? undefined,
+    onInsert: () => {
+      // When another user adds a task, refresh the task list
+      refetchTasks()
+    },
+    onUpdate: () => {
+      // When another user moves/updates a task, refresh the task list
+      refetchTasks()
+    },
+    onDelete: () => {
+      // When another user deletes a task, refresh the task list
+      refetchTasks()
+    },
+  })
+
+  // Combined real-time connection status
+  const isRealtimeConnected = isExperimentRealtimeConnected || isTasksRealtimeConnected
+
   // Metrics roll-up for automatic progress calculation
   const {
     updateExperimentProgress,
@@ -768,6 +803,7 @@ export default function ExperimentDetail() {
 
               {/* Actions */}
               <div className="flex items-center gap-2 shrink-0">
+                <LiveIndicator isConnected={isRealtimeConnected} size="sm" />
                 <Button
                   variant="ghost"
                   size="sm"

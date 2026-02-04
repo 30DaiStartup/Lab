@@ -1,10 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Search, Target, FlaskConical, SlidersHorizontal, X } from 'lucide-react'
 import { useOutcomes } from '@/hooks/useOutcomes'
+import { useRealtimeOutcomes } from '@/hooks/useRealtimeOutcomes'
 import type { OutcomeStatus, OutcomeLevel, CascadeAlignment } from '@/types/database'
 import { StatusBadge, type Status } from '@/components/StatusBadge'
 import { ProgressBar } from '@/components/ProgressBar'
+import { LiveIndicator } from '@/components/LiveIndicator'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -299,9 +301,21 @@ export default function Dashboard() {
   const [showFilters, setShowFilters] = useState(false)
 
   // Fetch outcomes from the hook
-  const { outcomes: fetchedOutcomes, isLoading, error } = useOutcomes({
+  const { outcomes: fetchedOutcomes, isLoading, error, refetch } = useOutcomes({
     status: statusFilter !== 'all' ? statusFilter : undefined,
     level: levelFilter !== 'all' ? levelFilter : undefined,
+  })
+
+  // Real-time subscription for outcomes - auto-refresh when changes occur
+  const handleRealtimeChange = useCallback(() => {
+    // Refetch outcomes when any change happens from other users/tabs
+    refetch()
+  }, [refetch])
+
+  const { isConnected: isRealtimeConnected } = useRealtimeOutcomes({
+    onInsert: handleRealtimeChange,
+    onUpdate: handleRealtimeChange,
+    onDelete: handleRealtimeChange,
   })
 
   // Use mock data if no outcomes fetched (Supabase not configured)
@@ -360,9 +374,12 @@ export default function Dashboard() {
       <header className="mb-8">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-              Outcomes Dashboard
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+                Outcomes Dashboard
+              </h1>
+              <LiveIndicator isConnected={isRealtimeConnected} size="sm" />
+            </div>
             <p className="mt-1 text-slate-500">
               {stats.total} outcome{stats.total !== 1 ? 's' : ''}
               {stats.active > 0 && <span className="text-slate-400"> &middot; </span>}

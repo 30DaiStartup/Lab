@@ -59,3 +59,44 @@ export {
   type UseMetricsRollupOptions,
   type UseMetricsRollupResult,
 } from './useMetricsRollup'
+
+export {
+  useOnlineStatus,
+  useIsOnline,
+  type OnlineStatus,
+} from './useOnlineStatus'
+
+// Real-time subscription hooks
+export {
+  useRealtimeSubscription,
+  useRealtimeAvailable,
+  type TableName,
+  type RealtimeEventType,
+  type RealtimeFilter,
+  type RealtimeChangePayload,
+  type UseRealtimeSubscriptionResult,
+} from './useRealtimeSubscription'
+
+export {
+  useRealtimeOutcomes,
+  useRealtimeOutcome,
+  type OutcomeChangeCallback,
+  type UseRealtimeOutcomesOptions,
+  type UseRealtimeOutcomesResult,
+} from './useRealtimeOutcomes'
+
+export {
+  useRealtimeExperiments,
+  useRealtimeExperiment,
+  type ExperimentChangeCallback,
+  type UseRealtimeExperimentsOptions,
+  type UseRealtimeExperimentsResult,
+} from './useRealtimeExperiments'
+
+export {
+  useRealtimeTasks,
+  useRealtimeTask,
+  type TaskChangeCallback,
+  type UseRealtimeTasksOptions,
+  type UseRealtimeTasksResult,
+} from './useRealtimeTasks'

@@ -21,6 +21,8 @@ import {
   Zap,
 } from 'lucide-react'
 import { useOutcome, useOutcomeMutations } from '@/hooks/useOutcomes'
+import { useRealtimeOutcome } from '@/hooks/useRealtimeOutcomes'
+import { useRealtimeExperiments } from '@/hooks/useRealtimeExperiments'
 import { useRaci } from '@/hooks/useRaci'
 import { useAnalysis, useAnalysisMutations, type CurrentStateData, type SolutionsData } from '@/hooks/useAnalysis'
 import {
@@ -57,6 +59,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { LiveIndicator } from '@/components/LiveIndicator'
 import { cn } from '@/lib/utils'
 
 // ============================================================================
@@ -933,6 +936,29 @@ export default function OutcomeDetail() {
   const [isGeneratingAnalysis, setIsGeneratingAnalysis] = useState(false)
   const [isGeneratingSolutions, setIsGeneratingSolutions] = useState(false)
 
+  // Real-time subscriptions for this outcome
+  const { isConnected: isOutcomeRealtimeConnected } = useRealtimeOutcome(outcomeId, {
+    onUpdate: () => {
+      // Refetch outcome when it's updated by another user/tab
+      refetch()
+    },
+    onDelete: () => {
+      // Navigate away if outcome is deleted by another user
+      navigate('/')
+    },
+  })
+
+  // Real-time subscription for experiments belonging to this outcome
+  const { isConnected: isExperimentsRealtimeConnected } = useRealtimeExperiments({
+    outcomeId: outcomeId ?? undefined,
+    onInsert: () => refetch(),
+    onUpdate: () => refetch(),
+    onDelete: () => refetch(),
+  })
+
+  // Combined real-time connection status
+  const isRealtimeConnected = isOutcomeRealtimeConnected || isExperimentsRealtimeConnected
+
   // Use mock data if no outcome fetched
   const outcome = fetchedOutcome || mockOutcome
   // Add taskCount to fetched experiments if not present, or use mock data
@@ -1120,6 +1146,7 @@ export default function OutcomeDetail() {
           </div>
 
           <div className="flex items-center gap-2">
+            <LiveIndicator isConnected={isRealtimeConnected} size="sm" />
             <Button variant="outline" size="sm" className="gap-2">
               <Edit3 className="size-3.5" />
               Edit

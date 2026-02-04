@@ -4,6 +4,7 @@ import { SearchIcon, BellIcon } from 'lucide-react'
 import Sidebar from './Sidebar'
 import { SearchOverlay } from '@/components/SearchOverlay'
 import { NotificationsPanel } from '@/components/NotificationsPanel'
+import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { OutcomesProvider } from '@/contexts/OutcomesContext'
 import { ExperimentsProvider } from '@/contexts/ExperimentsContext'
 import { cn } from '@/lib/utils'
@@ -47,6 +48,7 @@ function MainLayoutContent() {
     <div className="flex min-h-screen">
       <Sidebar />
       <div className="flex-1 flex flex-col">
+        <OfflineIndicator />
         <header className="flex items-center justify-between px-6 py-4 bg-card border-b border-border">
           <h1 className="text-xl font-semibold text-foreground">Outcome Tracking</h1>
           <div className="flex gap-2">
